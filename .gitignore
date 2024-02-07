@@ -1,0 +1,12 @@
+*.pyc
+*.pyo
+__pycache__
+*.swp
+build/
+dist/
+venv/
+.idea
+*.iws
+*.iml
+*.ipr
+.DS_Store
