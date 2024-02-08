@@ -84,8 +84,12 @@ class FirmwareUpdater:
         for port in comports():
             if port.location:
                 _ports.append(f"{port.device} -> [{port.location}] ({port.vid:X}:{port.pid:X} {port.serial_number})")
-            else:
+            elif port.vid and port.pid and port.serial_number:
                 _ports.append(f"{port.device} -> ({port.vid:X}:{port.pid:X} {port.serial_number})")
+            elif port.vid and port.pid:
+                _ports.append(f"{port.device} -> ({port.vid:X}:{port.pid:X})")
+            else:
+                _ports.append(f"{port.device}")
         _ports.sort()
         return _ports
 
