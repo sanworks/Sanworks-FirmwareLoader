@@ -17,7 +17,8 @@ This repository includes:
 
 ### Typical Usage...
 - Clone this repository
-- Install a version of Python >= 3.7
+- Install a version of Python >= 3.7, making sure to add Python to your PATH
+  - If on Debian / Ubuntu, make sure you also `sudo apt install python3-venv` 
 - Run `go.bat` on Windows, or `go.sh` on Linux / Mac.  **This script will**:
   - `git pull` to get the latest firmware and code
   - create a Python virtual environment, `venv`, if one isn't already there
