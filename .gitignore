@@ -10,3 +10,4 @@ venv/
 *.iml
 *.ipr
 .DS_Store
+Thumbs.db
