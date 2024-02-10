@@ -79,18 +79,29 @@ class FirmwareUpdater:
         return _commands
 
     def get_serial_port_strings(self) -> list:
-        """ Return a list of serial port strings suitable for displasy """
+        """ Return a list of serial port strings suitable for display """
         _ports = []
         for port in comports():
-            if port.location:
-                _ports.append(f"{port.device} -> [{port.location}] ({port.vid:X}:{port.pid:X} {port.serial_number})")
-            elif port.vid and port.pid and port.serial_number:
-                _ports.append(f"{port.device} -> ({port.vid:X}:{port.pid:X} {port.serial_number})")
-            elif port.vid and port.pid:
-                _ports.append(f"{port.device} -> ({port.vid:X}:{port.pid:X})")
-            else:
-                _ports.append(f"{port.device}")
-        _ports.sort()
+            if port.vid and port.pid:   # Only include USB Serial Devices; do not include hardware / "actual" serial ports
+                hexvid = format(port.vid, 'X').zfill(4)
+                hexpid = format(port.pid, 'X').zfill(4)
+                if hexvid not in ('0403', '067B'):  # Do not include USB-to-Serial converters (FTDI/Prolific)
+                    if hexvid in ("2341",):     # Arduino
+                        if port.serial_number:
+                            _ports.append(f"{port.device} -> Arduino (SN# {port.serial_number.replace('&', '')})")
+                        else:
+                            _ports.append(f"{port.device} -> Arduino")
+                    elif hexvid in ("16C0",):   # Teensy
+                        if port.serial_number:
+                            _ports.append(f"{port.device} -> Teensy (SN# {port.serial_number})")
+                        else:
+                            _ports.append(f"{port.device} -> Teensy")
+                    else:   # Unknown (not Arduino or Teensy)
+                        if port.serial_number:
+                            _ports.append(f"{port.device} -> {hexvid}:{hexpid} (SN# {port.serial_number})")
+                        else:
+                            _ports.append(f"{port.device} -> {hexvid}:{hexpid}")
+        _ports.sort(key=lambda p: int("".join([x for x in p.split('->')[0].strip() if x.isdigit()])))
         return _ports
 
     def get_serial_port_device_name(self, port_string) -> str:
