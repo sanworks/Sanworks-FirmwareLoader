@@ -10,9 +10,8 @@ This repository includes:
 
 - `sanfw.py`, A **Python-based GUI** for loading / re-loading device firmware.
 
-- `FirmwareUpdate`, A **MATLAB-based GUI** for loading / re-loading device firmware.
+- `SanworksFirmwareLoader.m` A **MATLAB-based GUI** for loading / re-loading device firmware.
   - NOTE: This was copied from the `Bpod_Gen2` repository and likely needs some work to get working!
-
 
 ## Python: Running the Firmware Update GUI
 
@@ -42,7 +41,7 @@ In Practice: PyCharm will guide you through most of it with colorful alert bars.
 
 ## MATLAB: Running the Firmware Update GUI
 - Add this folder to your MATLAB path
-- Run `FirmwareUpdate` at the MATLAB prompt
+- Run `SanworksFirmwareLoader` at the MATLAB prompt
 
 
 ## Firmware Sources
