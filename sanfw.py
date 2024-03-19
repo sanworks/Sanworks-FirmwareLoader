@@ -16,6 +16,12 @@ class FirmwareUpdater:
     """ Wraps a directory containing firmware files (`firmware_path`) with a simple API """
 
     def __init__(self, firmware_path=None):
+        # Get bossac and tycmd paths and versions
+        self.bossac_path = self._get_bossac_path()
+        self.tycmd_path = self._get_tycmd_path()
+        self.bossac_version = self._get_bossac_version()
+        self.tycmd_version = self._get_tycmd_version()
+
         # Parse the firmware_path
         self.firmware_path = firmware_path or os.path.join(os.getcwd(), 'firmware')
         self.firmware = {}
@@ -33,54 +39,106 @@ class FirmwareUpdater:
                     'version': version,
                     'loader': loader,
                 }]
+
         # Sort each named group descending by version
         for fwname in self.firmware:
             self.firmware[fwname].sort(key=lambda d: d['version'], reverse=True)
 
+    def _which(self, program) -> str:
+        """ get the full path to an executable `program` on the path; or an empty string """
+        if 'win' in sys.platform:
+            for path in os.environ.get("PATH", "").split(os.pathsep):
+                exe_file = os.path.join(path, program)
+                if os.path.isfile(exe_file) and os.access(exe_file, os.X_OK):
+                    return exe_file
+            return ""
+        else:
+            try:
+                return subprocess.check_output(f"which {program}", shell=True).decode().strip()
+            except subprocess.CalledProcessError:
+                return ""
+
+    def _get_bossac_path(self):
+        """ default to our bossac on Windows; otherwise try to use one on the path """
+        _path = self._which('bossac')
+        if 'win' in sys.platform:
+            _path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'third_party\\bossac\\bossac.exe')
+        return os.path.exists(_path) and _path or ""
+
+    def _get_tycmd_path(self):
+        """ default to our tycmd on Windows; otherwise try to use one on the path before using ours """
+        _path = self._which('tycmd')
+        if 'win' in sys.platform:
+            _path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'third_party\\tycmd\\tycmd.exe')
+        if not _path:
+            if 'linux' in sys.platform:
+                _path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'third_party/tycmd/tycmd_linux64')
+            elif 'darwin' in sys.platform:
+                _path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'third_party/tycmd/tycmd_osx')
+        return os.path.exists(_path) and _path or ""
+
+    def _get_bossac_version(self) -> str:
+        """ return the version of bossac represented at self.bossac_path """
+        _version = ""
+        if self.bossac_path:
+            try:
+                _version = next(iter([
+                    line.split(' Version ')[-1] for line in subprocess.run(
+                        [self.bossac_path, '--help'],
+                        stdout=subprocess.PIPE,
+                        universal_newlines=True
+                    ).stdout.splitlines() if ' Version ' in line
+                ]), "").strip()
+            except subprocess.CalledProcessError:
+                return _version
+        return _version
+
+    def _get_tycmd_version(self) -> str:
+        """ return the version of tycmd represented at self.tycmd_path """
+        _version = ""
+        if self.tycmd_path:
+            try:
+                _version = subprocess.check_output(
+                    f"{self.tycmd_path} --version", shell=True
+                ).decode().strip().split()[-1]
+            except subprocess.CalledProcessError:
+                return _version
+        return _version
+
     def get_firmware_names(self) -> list:
+        """ return a list of available firmware names """
         return list(self.firmware.keys())
 
     def get_firmware_versions(self, name: str) -> list:
+        """ return a list of available versions for a given firmware name """
         return [fd['version'] for fd in self.firmware.get(name, [])]
 
     def get_firmware(self, name: str, version: str) -> dict:
+        """ return the firmware dict for the matching `name` and `version` """
         return next(iter([fd for fd in self.firmware.get(name, []) if fd['version'] == version]), {})
 
     def get_firmware_update_commands(self, firmware: dict, serial_port: str) -> list:
+        """ return a list of string commands necessary to load `firmware` onto `serial_port` """
         _commands = []
         if firmware['loader'] == 'bossac':
             if 'win' in sys.platform:
                 _commands.append(f"mode {serial_port}:1200,N,8,1")
                 _commands.append("PING -n 3 127.0.0.1>NUL")
-                _commands.append(
-                    os.path.join(os.path.dirname(os.path.realpath(__file__)), 'third_party\\bossac\\bossac.exe') +
-                    f" -i -U true -e -w -v -b {firmware['fpath']} -R"
-                )
+                _commands.append(f"{self.bossac_path} -i -U true -e -w -v -b {firmware['fpath']} -R")
             else:
-                _commands.append(f"bossac -i -d -U=true -e -w -v -b {firmware['fpath']} -R")
+                _commands.append(f"{self.bossac_path} -i -d -U=true -e -w -v -b {firmware['fpath']} -R")
         elif firmware['loader'] == 'tycmd':
-            if 'win' in sys.platform:
-                _commands.append(
-                    os.path.join(os.path.dirname(os.path.realpath(__file__)), 'third_party\\tycmd\\tycmd.exe') +
-                    f" upload {firmware['fpath']} --board @{serial_port}"
-                )
-            elif 'linux' in sys.platform:
-                _commands.append(
-                    os.path.join(os.path.dirname(os.path.realpath(__file__)), 'third_party/tycmd/tycmd_linux64') +
-                    f" upload {firmware['fpath']} --board @{serial_port}"
-                )
-            elif 'darwin' in sys.platform:
-                _commands.append(
-                    os.path.join(os.path.dirname(os.path.realpath(__file__)), 'third_party/tycmd/tycmd_osx') +
-                    f" upload {firmware['fpath']} --board @{serial_port}"
-                )
+            if serial_port.isdigit():
+                _commands.append(f"{self.tycmd_path} upload {firmware['fpath']} --board {serial_port}")
             else:
-                raise NotImplementedError(f"Your platform ({sys.platform}) is not supported.")
+                _commands.append(f"{self.tycmd_path} upload {firmware['fpath']} --board @{serial_port}")
         return _commands
 
     def get_serial_port_strings(self) -> list:
-        """ Return a list of serial port strings suitable for display """
+        """ return a list of serial port strings suitable for display and reparsing """
         _ports = []
+
+        # First, use pyserial to get "normal" serial ports...
         for port in comports():
             if port.vid and port.pid:   # Only include USB Serial Devices; do not include hardware / "actual" serial ports
                 hexvid = format(port.vid, 'X').zfill(4)
@@ -101,7 +159,15 @@ class FirmwareUpdater:
                             _ports.append(f"{port.device} -> {hexvid}:{hexpid} (SN# {port.serial_number})")
                         else:
                             _ports.append(f"{port.device} -> {hexvid}:{hexpid}")
-        _ports.sort(key=lambda p: int("".join([x for x in p.split('->')[0].strip() if x.isdigit()])))
+
+        # Then, use tycmd to get Teensyduino RawHID devices (Teensies that haven't yet been programmed)...
+        if self.tycmd_path:
+            for line in subprocess.run([self.tycmd_path, "list"], stdout=subprocess.PIPE, universal_newlines=True).stdout.splitlines():
+                if line.startswith("add ") and "(Teensyduino RawHID)" in line:
+                    _ports.append(f"{line[4:12]} -> {line[20:]}")
+
+        # Finally, sort numerically and return!
+        _ports.sort(key=lambda p: int("0" + "".join([x for x in p.split('->')[0].strip() if x.isdigit()])))
         return _ports
 
     def get_serial_port_device_name(self, port_string) -> str:
@@ -142,6 +208,7 @@ QAbstractItemView {
     color:#1aff1a; background:#000000;
 }
 """
+
 
 
 class FirmwareUpdaterMainWindow(QDialog):
@@ -214,10 +281,39 @@ class FirmwareUpdaterMainWindow(QDialog):
 
         self.print_version_text()
         self.refresh_device_combo()
+        self.print_sanitycheck()
 
     def print_version_text(self):
         """ Prints the Firmware Updater Version to the log_window """
         self.log_window.appendPlainText(f"Sanworks Firmware Updater v{VERSION}")
+
+    def print_sanitycheck(self):
+        # Each individual check...
+        # Bossac
+        if self.firmware_updater.bossac_path and self.firmware_updater.bossac_version:
+            self.log_window.appendPlainText(f"Using bossac version {self.firmware_updater.bossac_version} from")
+            self.log_window.appendPlainText(f"    {os.path.dirname(self.firmware_updater.bossac_path)}")
+        else:
+            self.log_window.appendPlainText("WARNING: BOSSAC NOT FOUND.")
+        # Tycmd
+        if self.firmware_updater.tycmd_path and self.firmware_updater.tycmd_version:
+            self.log_window.appendPlainText(f"Using tycmd version {self.firmware_updater.tycmd_version} from")
+            self.log_window.appendPlainText(f"    {os.path.dirname(self.firmware_updater.tycmd_path)}")
+        else:
+            self.log_window.appendPlainText("WARNING: TYCMD NOT FOUND.")
+        # Serial devices
+        if len(self.device_combo):
+            self.log_window.appendPlainText(
+                f"Detected {len(self.device_combo)} serial device{len(self.device_combo) == 1 and '' or 's'}"
+            )
+        if not len(self.device_combo):
+            self.log_window.appendPlainText("WARNING: NO SERIAL DEVICES DETECTED.")
+
+        # Summary message...
+        if all((self.firmware_updater.bossac_path, self.firmware_updater.tycmd_path, len(self.device_combo),)):
+            self.log_window.appendPlainText("\nREADY TO LOAD!")
+        else:
+            self.log_window.appendPlainText("\nNOT READY TO LOAD!")
 
     def _firmware_combo_changed(self, text):
         self.version_combo.clear()
@@ -303,15 +399,12 @@ class FirmwareUpdaterMainWindow(QDialog):
         self.log_window.clear()
         self.print_version_text()
         self.refresh_device_combo()
+        self.print_sanitycheck()
 
     def refresh_device_combo(self):
         """ Replace the serial ports with the currently-deleted ones """
         self.device_combo.clear()
         self.device_combo.addItems(self.firmware_updater.get_serial_port_strings())
-        if len(self.device_combo):
-            self.log_window.appendPlainText("READY TO LOAD...")
-        else:
-            self.log_window.appendPlainText("WARNING: NO SERIAL DEVICES DETECTED!")
 
     def closeEvent(self, e):
         """ Save our window position and selected firmware for next time """
